@@ -1,19 +1,24 @@
 {
-  "user": {
-    "email": "",
-    "password": ""
-  },
-  "driver": {
-    "chrome": "./chromedriver.exe"
-  },
-  "pixiv": {
-    "login": {
-      "url": "https://accounts.pixiv.net/login",
-      "xpath": {
-        "btn_login": "//*[@id='LoginComponent']/form/button",
-        "inp_mail": "//*[@id='LoginComponent']/form/div[1]/div[1]/input",
-        "inp_pass": "//*[@id='LoginComponent']/form/div[1]/div[2]/input"
-      }
-    }
+	"user": {
+	  "email": "",
+	  "password": ""
+	},
+	"pixiv": {
+	  "login": {
+		"url": "https://accounts.pixiv.net/login",
+		"xpath": {
+		  "btn_submit": "//*[@id='LoginComponent']/form/button",
+		  "inp_mail": "//*[@id='LoginComponent']/form/div[1]/div[1]/input",
+		  "inp_pass": "//*[@id='LoginComponent']/form/div[1]/div[2]/input"
+		}
+	  },
+	  "auth": {
+		  "user_agent": "PixivAndroidApp/5.0.234 (Android 11; Pixel 5)",
+		  "redirect_uri": "https://app-api.pixiv.net/web/v1/users/auth/pixiv/callback",
+		  "login_url":  "https://app-api.pixiv.net/web/v1/login",
+		  "auth_token_url":  "https://oauth.secure.pixiv.net/auth/token",
+		  "client_id":  "MOBrBDS8blbauoSck0ZfDbtuzpyT",
+		  "client_secret":  "lsACyCD94FhDUtGTXi3QzcFE2uU1hqtDaKeqrdwj"
+	  }
+	}
   }
-}
