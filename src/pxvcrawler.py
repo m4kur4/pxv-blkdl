@@ -1,8 +1,9 @@
-import time
 import json
 import os
 import re
 import requests
+import shutil
+import time
 
 from base64 import urlsafe_b64encode
 from hashlib import sha256
@@ -11,6 +12,7 @@ from secrets import token_urlsafe
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
+from shutil import move
 from typing import Callable
 from urllib.parse import urlencode
 
@@ -97,6 +99,8 @@ class RefTokenManipulator(Manipulator):
 
 	def extract_auth_code(self) -> str:
 		"""chromedriverのログから認可コードを抽出する
+			Returns:
+				(str) 認可コード
 		"""
 		auth_code = None
 		for row in self.driver.get_log('performance'):
@@ -142,7 +146,6 @@ class RefTokenManipulator(Manipulator):
 		"""
 		# ページの読み込み
 		url = f'{self.url("login")}?{urlencode(login_params)}'
-		print(url)
 		self.driver.get(url)
 
 		btn_submit = self.elm('login', 'btn_submit')
@@ -183,26 +186,124 @@ class RefTokenManipulator(Manipulator):
 class ImageDownloader:
 	"""画像ファイル保存機能
 	"""
-	def __init__(self):
-		# リフレッシュトークンを取得
-		rtm = RefTokenManipulator()
-		ref_token = rtm.fetch_ref_token()
+	def __init__(self, ref_token: str):
+		"""初期化
+			Args:
+				ref_token (str): リフレッシュトークン
+		"""
 		# 認証
 		print(f'[DEBUG]REF_TOKEN ==> {ref_token}')
-		self.app = AppPixivAPI()
-		self.app.auth(refresh_token=ref_token)
+		self.api = PixivAPI()
+		self.api.auth(refresh_token=ref_token)
+		time.sleep(2) # !!!XXX: APIの呼び出し後はsleep必須!!!
+		self.aapi = AppPixivAPI()
+		self.aapi.auth(refresh_token=ref_token)
+		time.sleep(2) # !!!XXX: APIの呼び出し後はsleep必須!!!
 	
 	def fetch_image_all_by_userid(self, user_id: str) -> None:
 		"""指定したユーザーIDの全イラストをダウンロードする。
 			Args:
 				user_id (str): ユーザーID
 		"""
-		json_result = self.app.illust_ranking()
-		for illust in json_result.illusts[:3]:
-			self.app.download(illust.image_urls.large)
+		user_info = self.fetch_user_info(user_id)
+
+		# 画像の保存先を作っておく(作家さんの名前)
+		save_dir_base = self.make_image_save_dir(user_info)
+
+		# 全作品をループしてダウンロード
+		json_result = self.api.users_works(user_id, per_page=300)
+		time.sleep(2) # !!!XXX: APIの呼び出し後はsleep必須!!!
+		works = json_result['response']
+		debug_count = 0
+		for work in works:
+			self.fetch_image(work, save_dir_base)
+			debug_count += 1
+			if debug_count == 5:
+				break
+
+	def fetch_image(self, work: dict, save_dir_base: str) -> None:
+		"""画像を保存する
+		"""
+		image_id = work['id']
+		image_title = work['title']
+		image_page_count = work['page_count']
+
+		if image_page_count == 1:
+			# 単一ページの作品
+			image_url = work['image_urls']['large']
+			self.aapi.download(image_url, path=save_dir_base)
+			time.sleep(2) # !!!XXX: APIの呼び出し後はsleep必須!!!
+
+			# 保存後にリネーム
+			self.rename_image(save_dir_base, image_id, image_title, 0, True)
+		else:
+			# 複数ページの作品
+			work_detail = self.api.works(image_id).response
+			time.sleep(2) # !!!XXX: APIの呼び出し後はsleep必須!!!
+
+			work_pages = work_detail[0]['metadata']['pages']
+			save_dir = f'{save_dir_base}/{image_title}'
+
+			page_count = 0
+			for page in work_pages:
+				image_url = page['image_urls']['large']
+				os.makedirs(save_dir, exist_ok=True)
+				self.aapi.download(image_url, path=save_dir)
+				time.sleep(2) # !!!XXX: APIの呼び出し後はsleep必須!!!
+
+				# 保存後にリネーム
+				self.rename_image(save_dir, image_id, image_title, page_count)
+				page_count += 1
+
+	def make_image_save_dir(self, user_info: dict) -> str:
+		"""指定したユーザーIDの画像保存用フォルダを作成する。
+			Args:
+				user_id (str): ユーザーID
+			Returns:
+				(str): 保存先の相対パス
+		"""
+		user_name = user_info['user']['name']
+		save_dir = f'images/{user_name}'
+		os.makedirs(save_dir, exist_ok=True)
+		return save_dir
+
+	def fetch_user_info(self, user_id: str):
+		"""指定したユーザーIDのユーザー情報を取得する。
+			Args:
+				user_id (str): ユーザーID
+		"""
+		user_info = self.aapi.user_detail(user_id)
+		time.sleep(2) # !!!XXX: APIの呼び出し後はsleep必須!!!
+		return user_info
+	
+	def rename_image(self, save_dir: str, image_id: int, image_title: str, page_no: int, is_remove_page: bool = False):
+		"""ファイル名をリネームする
+			Args:
+				save_dir (str): ファイル保存先のディレクトリパス
+				image_id (int): 画像ID
+				image_title (str): 画像タイトル
+				page_no (int): 画像の連番
+				is_remove_page (bool): 末尾のページ数を消すかどうか(デフォルトは消さない)
+		"""
+		image_id_str = str(image_id)
+		file_name_org = f'{save_dir}/{image_id_str}_p{page_no}.jpg'
+
+		# 置換対象の文字列を設定
+		replace_target = f'{image_id_str}'
+		if is_remove_page:
+			replace_target += f'_p{page_no}'
+
+		file_name = file_name_org.replace(replace_target, image_title)
+		move(file_name_org, file_name)
 
 
 if __name__ == '__main__':
-	img_dl = ImageDownloader()
-	img_dl.fetch_image_all_by_userid('')
-	pass
+
+	# リフレッシュトークンを取得
+	rtm = RefTokenManipulator()
+	ref_token = rtm.fetch_ref_token()
+
+	# 画像ダウンロード実行
+
+	idl = ImageDownloader(ref_token)
+	idl.fetch_image_all_by_userid(9675329)
