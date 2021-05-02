@@ -4,7 +4,7 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from pxvcrawler import RefTokenManipulator
+from pxv_blkdl import RefTokenManipulator
 
 class TestRefTokenManipulatorMethods(unittest.TestCase):
 	"""テストの実行には同じディレクトリへ setting.json を配置する必要があります。"""
