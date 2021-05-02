@@ -6,6 +6,7 @@ import requests
 
 from base64 import urlsafe_b64encode
 from hashlib import sha256
+from pixivpy3 import *
 from secrets import token_urlsafe
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -86,44 +87,53 @@ class RefTokenManipulator(Manipulator):
 				break
 			time.sleep(1)
 
-		# ログイン完了後、chromedriverのログからリフレッシュコードを抽出する
-		ref_code = self.extract_ref_code()
+		# ログイン完了後、chromedriverのログから認可コードを抽出する
+		auth_code = self.extract_auth_code()
+		print(f'[INFO]AUTH_CODE ==> {auth_code}')
 
-		# リフレッシュコードを有効化してから返却する
-		self.enable_ref_code(ref_code, code_verifier)
-		print(f'[INFO]Get code: {ref_code}')
-		return ref_code
+		# 認可コードを用いてリフレッシュトークンを取得する
+		tokens = self.fetch_tokens(auth_code, code_verifier)
+		return tokens['refresh_token']
 
-	def extract_ref_code(self) -> str:
-		"""chromedriverのログからリフレッシュコードを抽出する
+	def extract_auth_code(self) -> str:
+		"""chromedriverのログから認可コードを抽出する
 		"""
-		ref_code = None
+		auth_code = None
 		for row in self.driver.get_log('performance'):
 			data = json.loads(row.get('message', {}))
 			message = data.get('message', {})
 			if message.get('method') == 'Network.requestWillBeSent':
 				url = message.get('params', {}).get('documentURL')
 				if url[:8] == 'pixiv://':
-					ref_code = re.search(r'code=([^&]*)', url).groups()[0]
+					auth_code = re.search(r'code=([^&]*)', url).groups()[0]
 					break
-		return ref_code
+		return auth_code
 
-	def enable_ref_code(self, ref_code: str, code_verifier: str) -> None:
-		"""リフレッシュコードを有効化する。
+	def fetch_tokens(self, auth_code: str, code_verifier: str) -> dict:
+		"""トークンを取得する
+
+			Args:
+				auth_code (str): 認可コード
+				code_verifire (str): code_verifire
+			Returns:
+				(dict) トークン
+					- access_token
+					- refresh_token
 		"""
 		response = requests.post(
-		self.auth()['auth_token_url'],
-		data={
-			"client_id": self.auth()['client_id'],
-			"client_secret": self.auth()['client_secret'],
-			"code": ref_code,
-			"code_verifier": code_verifier,
-			"grant_type": "authorization_code",
-			"include_policy": "true",
-			"redirect_uri": self.auth()['redirect_uri'],
-		},
-		headers={"User-Agent": self.auth()['user_agent']},
-	)
+			self.auth()['auth_token_url'],
+			data={
+				"client_id": self.auth()['client_id'],
+				"client_secret": self.auth()['client_secret'],
+				"code": auth_code,
+				"code_verifier": code_verifier,
+				"grant_type": "authorization_code",
+				"include_policy": "true",
+				"redirect_uri": self.auth()['redirect_uri'],
+			},
+			headers={"User-Agent": self.auth()['user_agent']}
+		)
+		return response.json()
 
 	def login(self, login_params: dict) -> None:
 		"""指定したログイン情報でブラウザからログインする。
@@ -173,8 +183,26 @@ class RefTokenManipulator(Manipulator):
 class ImageDownloader:
 	"""画像ファイル保存機能
 	"""
-	pass
+	def __init__(self):
+		# リフレッシュトークンを取得
+		rtm = RefTokenManipulator()
+		ref_token = rtm.fetch_ref_token()
+		# 認証
+		print(f'[DEBUG]REF_TOKEN ==> {ref_token}')
+		self.app = AppPixivAPI()
+		self.app.auth(refresh_token=ref_token)
+	
+	def fetch_image_all_by_userid(self, user_id: str) -> None:
+		"""指定したユーザーIDの全イラストをダウンロードする。
+			Args:
+				user_id (str): ユーザーID
+		"""
+		json_result = self.app.illust_ranking()
+		for illust in json_result.illusts[:3]:
+			self.app.download(illust.image_urls.large)
 
 
 if __name__ == '__main__':
+	img_dl = ImageDownloader()
+	img_dl.fetch_image_all_by_userid('')
 	pass
