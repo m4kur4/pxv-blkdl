@@ -1,5 +1,7 @@
+import argparse
 import json
 import os
+import pickle
 import re
 import requests
 import shutil
@@ -13,10 +15,13 @@ from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 from shutil import move
+from tqdm import tqdm
 from typing import Callable
 from urllib.parse import urlencode
 
-class Manipulator:
+class TokenManipulator:
+	"""[Abstract]トークン操作機能
+	"""
 	def __init__(self):
 		# クラス変数の設定
 		self.token = None
@@ -44,13 +49,13 @@ class Manipulator:
 		return self.driver.find_element_by_xpath(xpath[xpath_key])
 
 
-class RefTokenManipulator(Manipulator):
+class RefTokenManipulator(TokenManipulator):
 	"""リフレッシュトークン操作機能
 		APIコール用のリフレッシュトークンを取得する。
 	"""
 
 	def __init__(self):
-		Manipulator.__init__(self)
+		TokenManipulator.__init__(self)
 
 		# chromedriverの設定
 		driver_path = f'{os.path.dirname(__file__)}/chromedriver.exe'
@@ -191,15 +196,18 @@ class ImageDownloader:
 			Args:
 				ref_token (str): リフレッシュトークン
 		"""
-		# 認証
+		# クラス変数の設定
+		self.cache_manager = CacheManager()
+
+		# OAuth認証
 		print(f'[DEBUG]REF_TOKEN ==> {ref_token}')
 		self.api = PixivAPI()
 		self.api.auth(refresh_token=ref_token)
-		time.sleep(2) # !!!XXX: APIの呼び出し後はsleep必須!!!
+		time.sleep(1) # !!!XXX: APIの呼び出し後はsleep必須!!!
 		self.aapi = AppPixivAPI()
 		self.aapi.auth(refresh_token=ref_token)
-		time.sleep(2) # !!!XXX: APIの呼び出し後はsleep必須!!!
-	
+		time.sleep(1) # !!!XXX: APIの呼び出し後はsleep必須!!!
+
 	def fetch_image_all_by_userid(self, user_id: str) -> None:
 		"""指定したユーザーIDの全イラストをダウンロードする。
 			Args:
@@ -214,32 +222,40 @@ class ImageDownloader:
 		json_result = self.api.users_works(user_id, per_page=300)
 		time.sleep(2) # !!!XXX: APIの呼び出し後はsleep必須!!!
 		works = json_result['response']
-		debug_count = 0
-		for work in works:
+
+		tqdm_works = tqdm(works)
+		for work in tqdm_works:
 			self.fetch_image(work, save_dir_base)
-			debug_count += 1
-			if debug_count == 5:
-				break
 
 	def fetch_image(self, work: dict, save_dir_base: str) -> None:
 		"""画像を保存する
 		"""
+		author_id = work['user']['id']
 		image_id = work['id']
 		image_title = work['title']
 		image_page_count = work['page_count']
+
+		if self.cache_manager.is_exist_saved_image_id(author_id, image_id):
+			# 保存済みとしてキャッシュされている作品はスキップする
+			#print(f'[INFO]Skipped(Cache) ==> user_{author_id} | {image_id}:{image_title}')
+			return
+		else:
+			# 未キャッシュのものはキャッシュへ追加する
+			self.cache_manager.save_cache(author_id, image_id)
+			#print(f'[INFO]Cached ==> user_{author_id} | {image_id}:{image_title}')
 
 		if image_page_count == 1:
 			# 単一ページの作品
 			image_url = work['image_urls']['large']
 			self.aapi.download(image_url, path=save_dir_base)
-			time.sleep(2) # !!!XXX: APIの呼び出し後はsleep必須!!!
+			time.sleep(1) # !!!XXX: APIの呼び出し後はsleep必須!!!
 
 			# 保存後にリネーム
 			self.rename_image(save_dir_base, image_id, image_title, 0, True)
 		else:
 			# 複数ページの作品
 			work_detail = self.api.works(image_id).response
-			time.sleep(2) # !!!XXX: APIの呼び出し後はsleep必須!!!
+			time.sleep(1) # !!!XXX: APIの呼び出し後はsleep必須!!!
 
 			work_pages = work_detail[0]['metadata']['pages']
 			save_dir = f'{save_dir_base}/{image_title}'
@@ -249,7 +265,7 @@ class ImageDownloader:
 				image_url = page['image_urls']['large']
 				os.makedirs(save_dir, exist_ok=True)
 				self.aapi.download(image_url, path=save_dir)
-				time.sleep(2) # !!!XXX: APIの呼び出し後はsleep必須!!!
+				time.sleep(1) # !!!XXX: APIの呼び出し後はsleep必須!!!
 
 				# 保存後にリネーム
 				self.rename_image(save_dir, image_id, image_title, page_count)
@@ -262,8 +278,11 @@ class ImageDownloader:
 			Returns:
 				(str): 保存先の相対パス
 		"""
+		user_id = user_info['user']['id']
 		user_name = user_info['user']['name']
-		save_dir = f'images/{user_name}'
+
+		# 同名ユーザーの場合にごちゃるのでIDもつけておく
+		save_dir = f'images/{user_name}({user_id})'
 		os.makedirs(save_dir, exist_ok=True)
 		return save_dir
 
@@ -273,9 +292,9 @@ class ImageDownloader:
 				user_id (str): ユーザーID
 		"""
 		user_info = self.aapi.user_detail(user_id)
-		time.sleep(2) # !!!XXX: APIの呼び出し後はsleep必須!!!
+		time.sleep(1) # !!!XXX: APIの呼び出し後はsleep必須!!!
 		return user_info
-	
+
 	def rename_image(self, save_dir: str, image_id: int, image_title: str, page_no: int, is_remove_page: bool = False):
 		"""ファイル名をリネームする
 			Args:
@@ -297,13 +316,95 @@ class ImageDownloader:
 		move(file_name_org, file_name)
 
 
+class CacheManager:
+	"""キャッシュ管理機能
+	"""
+
+	def __init__(self):
+		# self.clear_cache()
+		cache = self.load_cache()
+		if 'saved_image_ids' not in cache:
+			# キャッシュが壊れている場合は初期化する
+			self.clear_cache()
+
+	def save_cache(self, user_id: int, image_id: int) -> None:
+		"""保存した画像IDをキャッシュに保存する
+			Args:
+				user_id (int): 投稿者のユーザーID
+				image_id (int): 画像ID
+		"""
+		cache = self.load_cache()
+		# そのユーザーの作品を一度も保存されていない場合はキャッシュにユーザーID追加
+		if not self.is_exist_saved_user_id(user_id):
+			cache['saved_image_ids'][user_id] = []
+
+		cache['saved_image_ids'][user_id].append(image_id)
+		with open(f'{os.path.dirname(__file__)}/cache.pkl', 'wb') as f:
+			pickle.dump(cache, f)
+
+	def load_cache(self) -> dict:
+		"""キャッシュを読み込む
+		"""
+		with open(f'{os.path.dirname(__file__)}/cache.pkl', 'rb') as f:
+			return pickle.load(f)
+
+	def is_exist_saved_image_id(self, user_id: int, image_id: int) -> bool:
+		"""指定した画像IDが保存済みとしてキャッシュされているかを判定する
+			Args:
+				user_id (int): 投稿者のユーザーID
+				image_id (int): 画像ID
+		"""
+		cache = self.load_cache()
+		saved_user_ids = cache['saved_image_ids'].keys()
+
+		if not self.is_exist_saved_user_id(user_id):
+			# そのユーザーの作品を一度も保存してないならキャッシュされていない
+			return False
+
+		saved_image_ids = cache['saved_image_ids'][user_id]
+		if image_id in saved_image_ids:
+			return True
+
+		return False
+
+	def is_exist_saved_user_id(self, user_id: int):
+		"""指定したユーザーIDがキャッシュされているかを判定する
+			Args:
+				user_id (int): ユーザーID
+		"""
+		cache = self.load_cache()
+		saved_user_ids = cache['saved_image_ids'].keys()
+		if user_id in saved_user_ids:
+			return True
+		
+		return False
+
+	def clear_cache(self) -> None:
+		"""キャッシュを初期化する
+		"""
+		with open(f'{os.path.dirname(__file__)}/cache.pkl', 'wb') as f:
+			cache = {}
+			cache['saved_image_ids'] = {}
+			pickle.dump(cache, f)
+
+
 if __name__ == '__main__':
+
+	parser = argparse.ArgumentParser(description='指定したIDの作家さんが投稿している作品を一括DLします。')
+	parser.add_argument('user_id', help='(必須)作家さんのユーザーID')
+	parser.add_argument('-r', '--refresh', action='store_true', help='(任意)キャッシュクリアします。(このツールを複数回実行しても、一度DLした画像はキャッシュクリアするまでDLされません)')
+	args = parser.parse_args()
+
+	if args.refresh:
+		# キャッシュクリアの指定があった場合実行する
+		cm = CacheManager()
+		cm.clear_cache()
+		print('[INFO]Cache cleared')
 
 	# リフレッシュトークンを取得
 	rtm = RefTokenManipulator()
 	ref_token = rtm.fetch_ref_token()
 
-	# 画像ダウンロード実行
-
+	# # 画像ダウンロード実行
 	idl = ImageDownloader(ref_token)
-	idl.fetch_image_all_by_userid(9675329)
+	idl.fetch_image_all_by_userid(args.user_id)

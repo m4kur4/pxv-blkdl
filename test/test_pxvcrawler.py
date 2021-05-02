@@ -27,6 +27,5 @@ class TestRefTokenManipulatorMethods(unittest.TestCase):
 		rtm = RefTokenManipulator()
 		rtm.oauth_pkce(rtm.transform_sha256)
 
-
 if __name__ == '__main__':
   unittest.main()
