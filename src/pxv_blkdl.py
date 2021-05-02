@@ -219,7 +219,7 @@ class ImageDownloader:
 		save_dir_base = self.make_image_save_dir(user_info)
 
 		# 全作品をループしてダウンロード
-		json_result = self.api.users_works(user_id, per_page=300)
+		json_result = self.api.users_works(int(user_id), per_page=300)
 		time.sleep(2) # !!!XXX: APIの呼び出し後はsleep必須!!!
 		works = json_result['response']
 
@@ -232,7 +232,7 @@ class ImageDownloader:
 		"""
 		author_id = work['user']['id']
 		image_id = work['id']
-		image_title = work['title']
+		image_title = work['title'].replace("/", "-")
 		image_page_count = work['page_count']
 
 		if self.cache_manager.is_exist_saved_image_id(author_id, image_id):
@@ -251,7 +251,7 @@ class ImageDownloader:
 			time.sleep(1) # !!!XXX: APIの呼び出し後はsleep必須!!!
 
 			# 保存後にリネーム
-			self.rename_image(save_dir_base, image_id, image_title, 0, True)
+			self.rename_image(save_dir_base, image_id, image_title, image_url, 0, True)
 		else:
 			# 複数ページの作品
 			work_detail = self.api.works(image_id).response
@@ -268,7 +268,7 @@ class ImageDownloader:
 				time.sleep(1) # !!!XXX: APIの呼び出し後はsleep必須!!!
 
 				# 保存後にリネーム
-				self.rename_image(save_dir, image_id, image_title, page_count)
+				self.rename_image(save_dir, image_id, image_title, image_url, page_count)
 				page_count += 1
 
 	def make_image_save_dir(self, user_info: dict) -> str:
@@ -295,17 +295,19 @@ class ImageDownloader:
 		time.sleep(1) # !!!XXX: APIの呼び出し後はsleep必須!!!
 		return user_info
 
-	def rename_image(self, save_dir: str, image_id: int, image_title: str, page_no: int, is_remove_page: bool = False):
+	def rename_image(self, save_dir: str, image_id: int, image_title: str, image_url: str, page_no: int, is_remove_page: bool = False):
 		"""ファイル名をリネームする
 			Args:
 				save_dir (str): ファイル保存先のディレクトリパス
 				image_id (int): 画像ID
 				image_title (str): 画像タイトル
+				image_url (str): 画像URL
 				page_no (int): 画像の連番
 				is_remove_page (bool): 末尾のページ数を消すかどうか(デフォルトは消さない)
 		"""
+		ext = image_url.rsplit('.',1)[1:][0]
 		image_id_str = str(image_id)
-		file_name_org = f'{save_dir}/{image_id_str}_p{page_no}.jpg'
+		file_name_org = f'{save_dir}/{image_id_str}_p{page_no}.{ext}'
 
 		# 置換対象の文字列を設定
 		replace_target = f'{image_id_str}'

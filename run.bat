@@ -16,9 +16,12 @@ call src\Scripts\activate.bat
 if /i {%do_cacheclear%}=={y} (goto :do_refresh)
 if /i {%do_cacheclear%}=={Y} (goto :do_refresh)
 
-python src\pxvcrawler.py %user_id%
+python src\pxv_blkdl.py %user_id%
+pause
+exit /b 0
 
 :do_refresh
-python src\pxvcrawler.py %user_id% -r
-
+python src\pxv_blkdl.py %user_id% -r
 pause
+exit /b 0
+
