@@ -73,7 +73,6 @@ class RefTokenManipulator(TokenManipulator):
 			executable_path=driver_path,
 			options=options
 		)
-		self.token = None
 
 	def __del__(self):
 		self.driver.close()
@@ -105,7 +104,7 @@ class RefTokenManipulator(TokenManipulator):
 	def extract_auth_code(self) -> str:
 		"""chromedriverのログから認可コードを抽出する
 			Returns:
-				(str) 認可コード
+				(str): 認可コード
 		"""
 		auth_code = None
 		for row in self.driver.get_log('performance'):
@@ -125,7 +124,7 @@ class RefTokenManipulator(TokenManipulator):
 				auth_code (str): 認可コード
 				code_verifire (str): code_verifire
 			Returns:
-				(dict) トークン
+				(dict): トークン
 					- access_token
 					- refresh_token
 		"""
@@ -145,7 +144,7 @@ class RefTokenManipulator(TokenManipulator):
 		return response.json()
 
 	def login(self, login_params: dict) -> None:
-		"""指定したログイン情報でブラウザからログインする。
+		"""ログインする
 			Params:
 				login_params (dict): ログインURLに付与するクエリパラメータ群
 		"""
@@ -164,7 +163,7 @@ class RefTokenManipulator(TokenManipulator):
 		btn_submit.click()
 
 	def transform_sha256(self, data: str) -> str:
-		"""指定したデータをsha256でハッシュ化した値を返却する。
+		"""指定したデータをsha256でハッシュ化して返却する。
 			Args:
 				data: ハッシュ化対象のデータ
 			Returns:
@@ -198,9 +197,10 @@ class ImageDownloader:
 		"""
 		# クラス変数の設定
 		self.cache_manager = CacheManager()
+		self.unsafe_char_filter = UnsafeCharcterFilter()
 
 		# OAuth認証
-		print(f'[DEBUG]REF_TOKEN ==> {ref_token}')
+		print(f'[INFO]REF_TOKEN ==> {ref_token}')
 		self.api = PixivAPI()
 		self.api.auth(refresh_token=ref_token)
 		time.sleep(1) # !!!XXX: APIの呼び出し後はsleep必須!!!
@@ -209,7 +209,7 @@ class ImageDownloader:
 		time.sleep(1) # !!!XXX: APIの呼び出し後はsleep必須!!!
 
 	def fetch_image_all_by_userid(self, user_id: str) -> None:
-		"""指定したユーザーIDの全イラストをダウンロードする。
+		"""指定したIDのユーザーが投稿した全イラストをダウンロードする。
 			Args:
 				user_id (str): ユーザーID
 		"""
@@ -232,7 +232,7 @@ class ImageDownloader:
 		"""
 		author_id = work['user']['id']
 		image_id = work['id']
-		image_title = work['title'].replace("/", "-")
+		image_title = self.unsafe_char_filter.conv_file_name_safe(work['title'])
 		image_page_count = work['page_count']
 
 		if self.cache_manager.is_exist_saved_image_id(author_id, image_id):
@@ -279,7 +279,7 @@ class ImageDownloader:
 				(str): 保存先の相対パス
 		"""
 		user_id = user_info['user']['id']
-		user_name = user_info['user']['name']
+		user_name = self.unsafe_char_filter.conv_file_name_safe(user_info['user']['name'])
 
 		# 同名ユーザーの場合にごちゃるのでIDもつけておく
 		save_dir = f'images/{user_name}({user_id})'
@@ -296,7 +296,7 @@ class ImageDownloader:
 		return user_info
 
 	def rename_image(self, save_dir: str, image_id: int, image_title: str, image_url: str, page_no: int, is_remove_page: bool = False):
-		"""ファイル名をリネームする
+		"""画像ファイルをリネームする
 			Args:
 				save_dir (str): ファイル保存先のディレクトリパス
 				image_id (int): 画像ID
@@ -305,7 +305,12 @@ class ImageDownloader:
 				page_no (int): 画像の連番
 				is_remove_page (bool): 末尾のページ数を消すかどうか(デフォルトは消さない)
 		"""
+		# あらかじめ使用不可の文字を置換する
+		image_title = self.unsafe_char_filter.conv_file_name_safe(image_title)
+
+		# 拡張子が決まっていないのでDLしてきたファイルより取得
 		ext = image_url.rsplit('.',1)[1:][0]
+
 		image_id_str = str(image_id)
 		file_name_org = f'{save_dir}/{image_id_str}_p{page_no}.{ext}'
 
@@ -388,6 +393,36 @@ class CacheManager:
 			cache = {}
 			cache['saved_image_ids'] = {}
 			pickle.dump(cache, f)
+
+
+class UnsafeCharcterFilter:
+	"""使用禁止文字の変換機能
+	"""
+	def __init__(self):
+		# ファイル名に使用禁止の文字
+		self.unsafe_char_map_file_name = {
+			'\\':'￥',
+			'/': '／',
+			':': '：',
+			'*': '＊',
+			'?': '？',
+			'<': '＜',
+			'>': '＞',
+			'|': '｜'
+		}
+
+	def conv_file_name_safe(self, file_name):
+		"""ファイルパスに使用できない文字を変換する
+			結合後のフルパスではなくファイル名のみに使用するよう注意
+			Args:
+				file_name (str): 変換対象の文字列
+		"""
+		if file_name == None or file_name == '':
+			return file_name
+
+		# 変換前：変換後のマッピング(とりあえず使用禁止文字は全角にしておけば良い感)
+		conv_table = str.maketrans(self.unsafe_char_map_file_name)
+		return file_name.translate(conv_table)
 
 
 if __name__ == '__main__':
