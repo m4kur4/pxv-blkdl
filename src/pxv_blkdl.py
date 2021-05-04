@@ -232,7 +232,7 @@ class ImageDownloader:
 		"""
 		author_id = work['user']['id']
 		image_id = work['id']
-		image_title = work['title'].replace("/", "-")
+		image_title = self.unsafe_char_filter.conv_file_name_safe(work['title'])
 		image_page_count = work['page_count']
 
 		if self.cache_manager.is_exist_saved_image_id(author_id, image_id):
@@ -279,7 +279,7 @@ class ImageDownloader:
 				(str): 保存先の相対パス
 		"""
 		user_id = user_info['user']['id']
-		user_name = user_info['user']['name']
+		user_name = self.unsafe_char_filter.conv_file_name_safe(user_info['user']['name'])
 
 		# 同名ユーザーの場合にごちゃるのでIDもつけておく
 		save_dir = f'images/{user_name}({user_id})'

@@ -31,8 +31,9 @@ class TestUnsafeCharcterFilterMethods(unittest.TestCase):
 
 	def test_conv_file_name_safe(self):
 		ucf = UnsafeCharcterFilter()
-		expected = '￥／：＊？＜＞｜'
-		actual = ucf.conv_file_name_safe('\\/:*?<>|')
+
+		expected = '￥／：＊？＜＞｜’”'
+		actual = ucf.conv_file_name_safe('\\/:*?<>|\'\"')
 		self.assertEqual(expected, actual)
 
 if __name__ == '__main__':
