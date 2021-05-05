@@ -8,20 +8,21 @@ set /p do_cacheclear=">>> "
 
 echo --------------------------------------------------
 echo 処理開始
-echo ※実行を中止するには Ctrs + C を押してください。
-echo
 
 call src\Scripts\activate.bat
 
-if /i {%do_cacheclear%}=={y} (goto :do_refresh)
-if /i {%do_cacheclear%}=={Y} (goto :do_refresh)
+if /i {%do_cacheclear%}=={y} (goto :lbl_do_refresh)
+if /i {%do_cacheclear%}=={Y} (goto :lbl_do_refresh)
 
 python src\pxv_blkdl.py %user_id%
-pause
-exit /b 0
+goto lbl_exit
 
-:do_refresh
+:lbl_do_refresh
 python src\pxv_blkdl.py %user_id% -r
+goto lbl_exit
+
+:lbl_exit
+echo 処理終了
 pause
 exit /b 0
 

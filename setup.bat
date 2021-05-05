@@ -2,7 +2,9 @@
 chcp 65001
 
 pip install virtualenv
-call src\Scripts\activate.bat
-pip install -r src\requirements.txt
+cd src
+virtualenv .
+call Scripts\activate.bat
+pip install -r requirements.txt
 
 pause
