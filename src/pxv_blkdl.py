@@ -1,5 +1,6 @@
 import argparse
 import json
+import logging
 import os
 import pickle
 import re
@@ -224,8 +225,22 @@ class ImageDownloader:
 		works = json_result['response']
 
 		tqdm_works = tqdm(works)
-		for work in tqdm_works:
-			self.fetch_image(work, save_dir_base)
+		try:
+			for work in tqdm_works:
+				self.fetch_image(work, save_dir_base)
+		except FileNotFoundError:
+			# ファイル名の変換に失敗した場合
+			logger = logging.getLogger(__name__)
+			logger.setLevel(logging.ERROR)
+
+			log_file_handler = logging.FileHandler('log/pxv_blkdl.log')
+			logger.addHandler(log_file_handler)
+			log_info = {
+				'error': 'FileNotFoundError',
+				'work': work
+			}
+			logger.error(log_info)
+			print('[ERR]Unexpected original filename')
 
 	def fetch_image(self, work: dict, save_dir_base: str) -> None:
 		"""画像を保存する
