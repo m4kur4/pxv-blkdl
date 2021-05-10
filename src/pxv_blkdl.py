@@ -325,17 +325,17 @@ class ImageDownloader:
 
 		# 拡張子が決まっていないのでDLしてきたファイルより取得
 		ext = image_url.rsplit('.',1)[1:][0]
+		file_name = image_url.rsplit('/', 1)[1:][0].replace(f'.{ext}', '')
 
-		image_id_str = str(image_id)
-		file_name_org = f'{save_dir}/{image_id_str}_p{page_no}.{ext}'
+		# image_id_str = str(image_id)
+		file_path_org = f'{save_dir}/{file_name}.{ext}'
 
 		# 置換対象の文字列を設定
-		replace_target = f'{image_id_str}'
-		if is_remove_page:
-			replace_target += f'_p{page_no}'
+		if not is_remove_page:
+			image_title += f'_p{page_no}'
 
-		file_name = file_name_org.replace(replace_target, image_title)
-		move(file_name_org, file_name)
+		file_path = file_path_org.replace(file_name, image_title)
+		move(file_path_org, file_path)
 
 
 class CacheManager:
