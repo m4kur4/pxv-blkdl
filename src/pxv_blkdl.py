@@ -423,7 +423,9 @@ class UnsafeCharcterFilter:
 			'?': '？',
 			'<': '＜',
 			'>': '＞',
-			'|': '｜'
+			'|': '｜',
+			'\"': '”',
+			'\'': '’' 
 		}
 
 	def conv_file_name_safe(self, file_name):
